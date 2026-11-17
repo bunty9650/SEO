@@ -1,4 +1,4 @@
-# Web Framework for Vercel Serverless
+# Production Web Framework for Vercel Serverless
 fastapi>=0.110.0
 uvicorn>=0.29.0
 
@@ -11,12 +11,11 @@ certifi>=2024.2.2
 # Cryptography & SSL Security
 cryptography>=42.0.0
 
-# Data Analysis & Report Generation
-pandas>=2.2.0
+# Excel & PDF Client Report Generation
 openpyxl>=3.1.2
 reportlab>=4.2.0
 
-# Schema & Utilities
+# Schema Validation & Utilities
 pydantic>=2.7.0
 rich>=13.7.0
 python-dateutil>=2.9.0

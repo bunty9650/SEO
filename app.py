@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
+import traceback
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+# Ensure ReportLab pure-python mode on serverless Linux
+os.environ["RL_BUILD_ACCEL"] = "0"
+
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from crawler.spider import WebSpider, CrawlResult
@@ -21,8 +26,6 @@ from auditors.security_auditor import SecurityAuditor
 from auditors.performance_auditor import PerformanceAuditor
 from auditors.offpage_auditor import OffPageAuditor
 from auditors.base import Category, Severity, AuditResult, AuditIssue
-from reports.excel_generator import ExcelReportGenerator
-from reports.pdf_generator import PDFReportGenerator
 
 # Top-level ASGI entrypoint for Vercel
 app = FastAPI(
@@ -174,8 +177,17 @@ async def api_run_audit(req: AuditRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": str(exc), "traceback": traceback.format_exc()},
+    )
+
+
 @app.get("/api/export/excel")
 async def export_excel(url: str, max_urls: int = 10, max_depth: int = 2):
+    from reports.excel_generator import ExcelReportGenerator
     req = AuditRequest(url=url, max_urls=max_urls, max_depth=max_depth)
     crawl_res, audit_res, all_issues, _ = await execute_audit(req)
 
@@ -194,6 +206,7 @@ async def export_excel(url: str, max_urls: int = 10, max_depth: int = 2):
 
 @app.get("/api/export/pdf")
 async def export_pdf(url: str, max_urls: int = 10, max_depth: int = 2):
+    from reports.pdf_generator import PDFReportGenerator
     req = AuditRequest(url=url, max_urls=max_urls, max_depth=max_depth)
     crawl_res, audit_res, all_issues, _ = await execute_audit(req)
 

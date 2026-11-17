@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.cache/
+.pytest_cache/
+
+# Test and generated report artifacts
+*.xlsx
+*.pdf
+reports_output/
+screenshots/
+
+# Environment and sensitive files
+.env
+.env.*
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

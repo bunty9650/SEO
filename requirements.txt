@@ -1,25 +1,22 @@
-# Core Web Framework for Vercel & Production
+# Web Framework for Vercel Serverless
 fastapi>=0.110.0
 uvicorn>=0.29.0
 
-# Core Web Crawler & HTTP Engine
+# HTTP & Web Crawling Engine
 httpx>=0.27.0
 beautifulsoup4>=4.12.3
 lxml>=5.2.0
 certifi>=2024.2.2
 
-# Cryptography & Security
+# Cryptography & SSL Security
 cryptography>=42.0.0
 
-# Data Analysis & Reporting
+# Data Analysis & Report Generation
 pandas>=2.2.0
 openpyxl>=3.1.2
 reportlab>=4.2.0
 
-# Web Dashboard (Streamlit for optional local use)
-streamlit>=1.35.0
-
-# Utilities
+# Schema & Utilities
 pydantic>=2.7.0
 rich>=13.7.0
 python-dateutil>=2.9.0

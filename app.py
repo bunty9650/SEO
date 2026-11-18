@@ -312,8 +312,8 @@ async def serve_dashboard():
                         <input
                             type="text"
                             id="targetUrl"
-                            placeholder="Enter website URL (e.g. https://example.com or https://www.gentechbridge.com)"
-                            value="https://example.com"
+                            placeholder="Enter website URL (e.g. https://www.gentechbridge.com or https://python.org)"
+                            value="https://www.gentechbridge.com"
                             required
                             class="w-full pl-11 pr-4 py-3.5 bg-slate-950 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                         />
@@ -351,8 +351,9 @@ async def serve_dashboard():
                     </div>
                     <div class="flex items-center space-x-2 text-xs">
                         <span>Quick Presets:</span>
-                        <button type="button" onclick="setPreset('https://example.com')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-300 transition">example.com</button>
-                        <button type="button" onclick="setPreset('http://127.0.0.1:9000')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-300 transition">Local Demo (9000)</button>
+                        <button type="button" onclick="setPreset('https://www.gentechbridge.com')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-300 transition">gentechbridge.com</button>
+                        <button type="button" onclick="setPreset('https://python.org')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-300 transition">python.org</button>
+                        <button type="button" onclick="setPreset('https://example.com')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 rounded-md text-slate-300 transition">example.com (1-Page)</button>
                     </div>
                 </div>
             </form>
@@ -417,7 +418,7 @@ async def serve_dashboard():
                         <i class="fa-solid fa-wrench"></i><span>Issues & Fixes (<span id="issuesCount">0</span>)</span>
                     </button>
                     <button onclick="switchTab('tab-pages')" id="btn-tab-pages" class="tab-btn px-5 py-3.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center space-x-2 shrink-0">
-                        <i class="fa-solid fa-list-check"></i><span>Crawled Pages</span>
+                        <i class="fa-solid fa-list-check"></i><span>Crawled Pages (<span id="crawledPagesCount">0</span>)</span>
                     </button>
                     <button onclick="switchTab('tab-sec')" id="btn-tab-sec" class="tab-btn px-5 py-3.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center space-x-2 shrink-0">
                         <i class="fa-solid fa-lock"></i><span>Security & Headers</span>
@@ -444,7 +445,14 @@ async def serve_dashboard():
 
                     <!-- TAB 2: Crawled Pages -->
                     <div id="tab-pages" class="tab-content hidden space-y-4">
-                        <h3 class="text-base font-bold text-white">Discovered URLs & Indexability</h3>
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-base font-bold text-white">Discovered URLs & Indexability</h3>
+                            <span class="text-xs text-slate-400">Total crawled: <span id="pagesSummaryCount" class="font-bold text-emerald-400">0</span> URLs</span>
+                        </div>
+                        <div id="singlePageNotice" class="hidden p-3 bg-amber-950/30 border border-amber-900/60 rounded-xl text-xs text-amber-200/90 flex items-start space-x-2">
+                            <i class="fa-solid fa-circle-info text-amber-400 mt-0.5 shrink-0"></i>
+                            <span>Only 1 URL was discovered. Note: Single Page Applications (SPAs with client-side JavaScript rendering), websites with anchor-only in-page links (<code>#section</code>), or sites blocking web spiders will only yield the root page. For multi-page websites with HTML links, increase "Max Depth" in settings to crawl deeper.</span>
+                        </div>
                         <div class="overflow-x-auto custom-scrollbar">
                             <table class="w-full text-left text-xs text-slate-300">
                                 <thead class="bg-slate-950 text-slate-400 uppercase tracking-wider">
@@ -677,15 +685,26 @@ async def serve_dashboard():
             }
 
             // Tab 2: Pages
+            const totalPages = data.crawl.pages.length;
+            const pagesCountEl = document.getElementById('crawledPagesCount');
+            if (pagesCountEl) pagesCountEl.textContent = totalPages;
+            const pagesSummaryEl = document.getElementById('pagesSummaryCount');
+            if (pagesSummaryEl) pagesSummaryEl.textContent = totalPages;
+            const singleNotice = document.getElementById('singlePageNotice');
+            if (singleNotice) {
+                if (totalPages === 1) singleNotice.classList.remove('hidden');
+                else singleNotice.classList.add('hidden');
+            }
+
             const pagesTbody = document.getElementById('pagesTableBody');
             pagesTbody.innerHTML = '';
             data.crawl.pages.forEach(p => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="p-3"><span class="px-2 py-0.5 rounded font-bold ${p.status === 200 ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'}">${p.status}</span></td>
-                    <td class="p-3 font-mono text-slate-300 max-w-xs truncate">${escapeHtml(p.url)}</td>
+                    <td class="p-3 font-mono text-slate-300 max-w-xs truncate" title="${escapeHtml(p.url)}"><a href="${escapeHtml(p.url)}" target="_blank" class="hover:text-emerald-400 underline decoration-slate-600">${escapeHtml(p.url)}</a></td>
                     <td class="p-3">${p.time_ms}ms</td>
-                    <td class="p-3 text-slate-300 max-w-xs truncate">${escapeHtml(p.title || 'N/A')}</td>
+                    <td class="p-3 text-slate-300 max-w-xs truncate" title="${escapeHtml(p.title || 'N/A')}">${escapeHtml(p.title || 'N/A')}</td>
                     <td class="p-3">${p.h1_count}</td>
                     <td class="p-3">${p.word_count}</td>
                 `;

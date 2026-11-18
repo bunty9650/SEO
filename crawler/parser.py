@@ -280,6 +280,20 @@ class DOMParser:
 
         return insecure
 
+    def _is_internal_netloc(self, target_netloc: str) -> bool:
+        """Robust internal domain matcher supporting www/non-www and subdomains."""
+        if not target_netloc:
+            return True
+        t = target_netloc.lower().split(":")[0]
+        b = self.base_domain.split(":")[0]
+        if t == b:
+            return True
+        t_root = t[4:] if t.startswith("www.") else t
+        b_root = b[4:] if b.startswith("www.") else b
+        if t_root == b_root:
+            return True
+        return t.endswith("." + b_root) or b.endswith("." + t_root)
+
     def get_links(self) -> List[LinkData]:
         """Extracts and resolves all <a> hyperlinks."""
         links: List[LinkData] = []
@@ -299,7 +313,7 @@ class DOMParser:
                 continue
             seen_urls.add(clean_url)
 
-            is_external = parsed_res.netloc.lower() != self.base_domain
+            is_external = not self._is_internal_netloc(parsed_res.netloc)
             rel = a.get("rel", [])
             rel_list = [r.lower() for r in (rel if isinstance(rel, list) else [rel])]
             is_nofollow = "nofollow" in rel_list

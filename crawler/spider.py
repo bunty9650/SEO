@@ -66,7 +66,7 @@ class WebSpider:
 
     DEFAULT_USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 (SEO-Audit-Agent/1.0)"
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     )
 
     def __init__(
@@ -118,11 +118,17 @@ class WebSpider:
         return parsed._replace(netloc=netloc, path=path, fragment="").geturl()
 
     def _is_internal_url(self, url: str) -> bool:
-        """Determines if a target URL belongs to the seed domain."""
+        """Determines if a target URL belongs to the seed domain (supporting www/non-www & subdomains)."""
         parsed = urlparse(url)
-        target_domain = parsed.netloc.lower()
-        # Same domain or subdomain of base_domain
-        return target_domain == self.base_domain or target_domain.endswith("." + self.base_domain)
+        target_domain = parsed.netloc.lower().split(":")[0]
+        base = self.base_domain.split(":")[0]
+        if target_domain == base:
+            return True
+        t_root = target_domain[4:] if target_domain.startswith("www.") else target_domain
+        b_root = base[4:] if base.startswith("www.") else base
+        if t_root == b_root:
+            return True
+        return target_domain.endswith("." + b_root) or base.endswith("." + t_root)
 
     async def _fetch_robots_txt(self, client: httpx.AsyncClient):
         """Asynchronously loads and parses /robots.txt."""
@@ -280,7 +286,7 @@ class WebSpider:
 
                 tasks = []
                 for url, depth in current_batch:
-                    if not self._is_allowed_by_robots(url):
+                    if depth > 0 and not self._is_allowed_by_robots(url):
                         continue
                     tasks.append(self._crawl_page(client, semaphore, url, depth))
 
@@ -291,6 +297,12 @@ class WebSpider:
 
                 for page in results:
                     self.crawled_pages.append(page)
+                    # If seed page (depth == 0) redirected to canonical domain, update self.base_domain
+                    if page.depth == 0 and page.final_url:
+                        final_netloc = urlparse(page.final_url).netloc.lower()
+                        if final_netloc and final_netloc != self.base_domain:
+                            self.base_domain = final_netloc
+
                     if self.on_page_crawled:
                         self.on_page_crawled(page, len(self.crawled_pages), self.max_urls)
 

@@ -285,11 +285,12 @@ async def serve_dashboard():
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span> Vercel Ready
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 shadow-sm">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span> Cloud Engine Live
                 </span>
-                <a href="https://github.com/bunty9650/SEO" target="_blank" class="text-slate-400 hover:text-white text-lg transition">
-                    <i class="fa-brands fa-github"></i>
+                <a href="https://github.com/bunty9650/SEO" target="_blank" class="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition shadow-sm">
+                    <i class="fa-brands fa-github text-sm"></i>
+                    <span>GitHub Repo</span>
                 </a>
             </div>
         </div>
@@ -644,14 +645,14 @@ async def serve_dashboard():
                             <div class="p-2.5 rounded-lg bg-rose-950/40 border border-rose-900/50">
                                 <div class="flex items-center space-x-1.5 text-rose-400 font-bold text-xs mb-1">
                                     <i class="fa-solid fa-triangle-exclamation"></i>
-                                    <span>Bad Sign (Khatre Ka Sanket):</span>
+                                    <span>Bad Sign:</span>
                                 </div>
                                 <p class="text-xs text-rose-200/90 leading-relaxed">${escapeHtml(issue.bad_sign || issue.title)}</p>
                             </div>
                             <div class="p-2.5 rounded-lg bg-amber-950/40 border border-amber-900/50">
                                 <div class="flex items-center space-x-1.5 text-amber-400 font-bold text-xs mb-1">
                                     <i class="fa-solid fa-shield-halved"></i>
-                                    <span>Why It's Bad (Kyu Khatarnak Hai):</span>
+                                    <span>Why It's Bad (Security Impact):</span>
                                 </div>
                                 <p class="text-xs text-amber-200/90 leading-relaxed">${escapeHtml(issue.why_bad || issue.description)}</p>
                             </div>

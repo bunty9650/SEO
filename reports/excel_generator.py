@@ -227,7 +227,7 @@ class ExcelReportGenerator:
     def _build_issues_tab(self, ws):
         ws.views.sheetView[0].showGridLines = True
         headers = [
-            "Severity", "Category", "Issue Title", "Bad Sign (Khatra)",
+            "Severity", "Category", "Issue Title", "Bad Sign",
             "Why It's Bad (Security Risk)", "Affected URL",
             "Evidence", "Description", "Nginx Configuration Fix",
             "Apache .htaccess Fix", "HTML / Code Fix"

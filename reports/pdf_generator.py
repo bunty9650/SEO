@@ -241,7 +241,7 @@ class PDFReportGenerator:
                             issue_title_style
                         )
                     ],
-                    [Paragraph(f"<b><font color='#DC2626'>Bad Sign (Khatra):</font></b> {safe_xml(bad_sign_str)}", body_style)],
+                    [Paragraph(f"<b><font color='#DC2626'>Bad Sign:</font></b> {safe_xml(bad_sign_str)}", body_style)],
                     [Paragraph(f"<b><font color='#D97706'>Why It's Bad (Security Risk):</font></b> {safe_xml(why_bad_str)}", body_style)],
                     [Paragraph(f"<b>Evidence:</b> {safe_xml(issue.evidence)}", body_style)],
                 ]

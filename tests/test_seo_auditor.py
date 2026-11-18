@@ -91,3 +91,35 @@ def test_seo_auditor_flags_broken_link():
 
     issue_ids = [i.issue_id for i in result.issues]
     assert "SEO_BROKEN_LINK" in issue_ids
+
+
+def test_seo_auditor_multipage_score_normalization():
+    """Verify that multi-page crawls normalize penalties so healthy sites do not drop to 0."""
+    pages = [
+        PageData(
+            url=f"https://example.com/page-{i}",
+            final_url=f"https://example.com/page-{i}",
+            status_code=200,
+            response_time_ms=80.0,
+            title=f"Healthy Descriptive Page Title {i} - Brand Name",
+            meta_description="A good descriptive meta description exceeding optimal length guidelines for search.",
+            h1_headings=[f"Main Heading {i}"],
+            canonical=f"https://example.com/page-{i}",
+            word_count=450,
+            # Only 1 minor issue: missing twitter card
+        )
+        for i in range(10)
+    ]
+    crawl_result = CrawlResult(
+        seed_url="https://example.com",
+        base_domain="example.com",
+        pages=pages,
+        total_crawled=10,
+    )
+
+    auditor = SEOAuditor(crawl_result)
+    result = auditor.run()
+
+    # Even though 10 pages have missing schema/og/twitter tags, normalized score should be >= 80, NOT 0
+    assert result.score >= 80
+

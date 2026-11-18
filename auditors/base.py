@@ -69,10 +69,38 @@ class AuditResult(BaseModel):
     passed_checks: List[str] = Field(default_factory=list)
     metrics: Dict[str, Any] = Field(default_factory=dict)
 
-    def calculate_score(self, starting_score: int = 100) -> int:
-        """Calculates normalized score (0-100) based on issue penalties."""
-        penalty = sum(issue.severity.weight for issue in self.issues)
-        calculated = max(0, min(100, starting_score - penalty))
+    def calculate_score(self, starting_score: int = 100, total_units: Optional[int] = None) -> int:
+        """Calculates normalized score (0-100) based on issue penalties.
+
+        For multi-page/multi-unit audits, penalties are scaled by the proportion of
+        items affected so that minor repeated issues across pages do not unfairly zero out the score.
+        """
+        if not self.issues:
+            self.score = starting_score
+            return starting_score
+
+        if total_units is None:
+            urls = {i.url for i in self.issues if i.url}
+            total_units = max(1, len(urls))
+        else:
+            total_units = max(1, total_units)
+
+        if total_units > 1:
+            from collections import defaultdict
+            issues_by_id = defaultdict(list)
+            for issue in self.issues:
+                issues_by_id[issue.issue_id].append(issue)
+
+            total_penalty = 0.0
+            for issue_id, occurrences in issues_by_id.items():
+                base_weight = occurrences[0].severity.weight
+                ratio = min(1.0, len(occurrences) / total_units)
+                total_penalty += base_weight * ratio
+            calculated = max(0, min(100, round(starting_score - total_penalty)))
+        else:
+            penalty = sum(issue.severity.weight for issue in self.issues)
+            calculated = max(0, min(100, starting_score - penalty))
+
         self.score = calculated
         return calculated
 

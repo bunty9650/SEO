@@ -114,7 +114,7 @@ class SEOAuditor:
             passed_checks=self.passed_checks,
             metrics=self.metrics,
         )
-        result.calculate_score()
+        result.calculate_score(total_units=len(self.pages))
         return result
 
     def _audit_status_and_redirects(self, page: PageData):

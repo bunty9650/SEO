@@ -230,6 +230,9 @@ class PDFReportGenerator:
                     Severity.INFO: "#4B5563",
                 }.get(issue.severity, "#4B5563")
 
+                bad_sign_str = issue.bad_sign or issue.title
+                why_bad_str = issue.why_bad or issue.description
+
                 issue_box = [
                     [
                         Paragraph(
@@ -238,8 +241,9 @@ class PDFReportGenerator:
                             issue_title_style
                         )
                     ],
+                    [Paragraph(f"<b><font color='#DC2626'>Bad Sign (Khatra):</font></b> {safe_xml(bad_sign_str)}", body_style)],
+                    [Paragraph(f"<b><font color='#D97706'>Why It's Bad (Security Risk):</font></b> {safe_xml(why_bad_str)}", body_style)],
                     [Paragraph(f"<b>Evidence:</b> {safe_xml(issue.evidence)}", body_style)],
-                    [Paragraph(f"<b>Explanation:</b> {safe_xml(issue.description)}", body_style)],
                 ]
 
                 # If remediation code exists, display snippet

@@ -55,6 +55,8 @@ class AuditIssue(BaseModel):
     description: str
     evidence: str
     url: Optional[str] = None
+    bad_sign: Optional[str] = None
+    why_bad: Optional[str] = None
     solution_apache: Optional[str] = None
     solution_nginx: Optional[str] = None
     solution_code: Optional[str] = None

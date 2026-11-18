@@ -107,3 +107,79 @@ def test_security_auditor_legacy_protocols_flagged():
         issue_ids = [i.issue_id for i in auditor.issues]
         assert "SEC_SSL_LEGACY_PROTOCOL" in issue_ids, f"Failed to flag legacy protocol: {legacy}"
 
+
+def test_security_auditor_cookie_security_and_bad_sign():
+    auditor = SecurityAuditor("https://example.com")
+    cookies = [
+        "session_id=abc123xyz; Path=/",  # missing Secure, HttpOnly, SameSite
+        "tracking=1; Secure; SameSite=Lax",
+    ]
+    auditor._audit_cookies(cookies)
+    issue_ids = [i.issue_id for i in auditor.issues]
+
+    assert "SEC_COOKIE_INSECURE" in issue_ids
+    assert "SEC_COOKIE_NO_HTTPONLY" in issue_ids
+    assert "SEC_COOKIE_WEAK_SAMESITE" in issue_ids
+
+    # Verify bad_sign and why_bad are set
+    for issue in auditor.issues:
+        assert issue.bad_sign is not None and len(issue.bad_sign) > 0
+        assert issue.why_bad is not None and len(issue.why_bad) > 0
+
+
+def test_security_auditor_cors_misconfiguration():
+    auditor = SecurityAuditor("https://example.com")
+    headers = {
+        "access-control-allow-origin": "*",
+        "access-control-allow-credentials": "true",
+    }
+    auditor._audit_cors(headers)
+    issue_ids = [i.issue_id for i in auditor.issues]
+    assert "SEC_CORS_WILDCARD" in issue_ids
+    assert auditor.issues[0].bad_sign is not None
+    assert auditor.issues[0].why_bad is not None
+
+
+def test_security_auditor_csp_unsafe_directives():
+    auditor = SecurityAuditor("https://example.com")
+    csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' *;"
+    auditor._audit_csp_depth(csp)
+    issue_ids = [i.issue_id for i in auditor.issues]
+    assert "SEC_CSP_UNSAFE_DIRECTIVE" in issue_ids
+    assert "SEC_CSP_WILDCARD" in issue_ids
+
+
+def test_security_auditor_sri_and_insecure_forms():
+    auditor = SecurityAuditor("https://example.com")
+    html = """
+    <html>
+        <head>
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        </head>
+        <body>
+            <form action="http://insecure-api.com/login" method="POST">
+                <input type="password" name="password" />
+            </form>
+        </body>
+    </html>
+    """
+    auditor._audit_sri(html)
+    auditor._audit_insecure_forms(html)
+    issue_ids = [i.issue_id for i in auditor.issues]
+    assert "SEC_SRI_MISSING" in issue_ids
+    assert "SEC_INSECURE_PASSWORD_FORM" in issue_ids
+
+
+def test_security_auditor_exposed_secrets_detection():
+    auditor = SecurityAuditor("https://example.com")
+    html = """
+    <script>
+        const aws_key = "AKIAIOSFODNN7EXAMPLE";
+    </script>
+    """
+    auditor._audit_exposed_secrets(html)
+    issue_ids = [i.issue_id for i in auditor.issues]
+    assert "SEC_EXPOSED_SECRET" in issue_ids
+    assert auditor.issues[0].bad_sign is not None
+    assert auditor.issues[0].why_bad is not None
+

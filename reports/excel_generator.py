@@ -227,7 +227,8 @@ class ExcelReportGenerator:
     def _build_issues_tab(self, ws):
         ws.views.sheetView[0].showGridLines = True
         headers = [
-            "Severity", "Category", "Issue Title", "Affected URL",
+            "Severity", "Category", "Issue Title", "Bad Sign (Khatra)",
+            "Why It's Bad (Security Risk)", "Affected URL",
             "Evidence", "Description", "Nginx Configuration Fix",
             "Apache .htaccess Fix", "HTML / Code Fix"
         ]
@@ -249,26 +250,28 @@ class ExcelReportGenerator:
 
             ws.cell(row=row_idx, column=2, value=issue.category.value).font = self.NORMAL_FONT
             ws.cell(row=row_idx, column=3, value=issue.title).font = self.BOLD_FONT
-            ws.cell(row=row_idx, column=4, value=issue.url or "Global / Domain").font = self.NORMAL_FONT
-            ws.cell(row=row_idx, column=5, value=issue.evidence).font = self.NORMAL_FONT
+            ws.cell(row=row_idx, column=4, value=issue.bad_sign or issue.title).font = self.NORMAL_FONT
+            ws.cell(row=row_idx, column=5, value=issue.why_bad or issue.description).font = self.NORMAL_FONT
+            ws.cell(row=row_idx, column=6, value=issue.url or "Global / Domain").font = self.NORMAL_FONT
+            ws.cell(row=row_idx, column=7, value=issue.evidence).font = self.NORMAL_FONT
 
-            desc_cell = ws.cell(row=row_idx, column=6, value=issue.description)
+            desc_cell = ws.cell(row=row_idx, column=8, value=issue.description)
             desc_cell.font = self.NORMAL_FONT
             desc_cell.alignment = Alignment(wrap_text=True)
 
-            ng_cell = ws.cell(row=row_idx, column=7, value=issue.solution_nginx or "N/A")
+            ng_cell = ws.cell(row=row_idx, column=9, value=issue.solution_nginx or "N/A")
             ng_cell.font = self.CODE_FONT
             ng_cell.alignment = Alignment(wrap_text=True)
 
-            ap_cell = ws.cell(row=row_idx, column=8, value=issue.solution_apache or "N/A")
+            ap_cell = ws.cell(row=row_idx, column=10, value=issue.solution_apache or "N/A")
             ap_cell.font = self.CODE_FONT
             ap_cell.alignment = Alignment(wrap_text=True)
 
-            code_cell = ws.cell(row=row_idx, column=9, value=issue.solution_code or "N/A")
+            code_cell = ws.cell(row=row_idx, column=11, value=issue.solution_code or "N/A")
             code_cell.font = self.CODE_FONT
             code_cell.alignment = Alignment(wrap_text=True)
 
-            for c in range(1, 10):
+            for c in range(1, 12):
                 ws.cell(row=row_idx, column=c).border = self.THIN_BORDER
 
         self._auto_fit_columns(ws, max_width_limit=50)

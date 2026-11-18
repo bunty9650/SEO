@@ -68,7 +68,11 @@ async def execute_audit(req: AuditRequest):
 
     # 3. Security
     sec_auditor = SecurityAuditor(req.url)
-    sec_res = await sec_auditor.run(headers=seed_headers, insecure_resources=insecure_assets)
+    sec_res = await sec_auditor.run(
+        headers=seed_headers,
+        insecure_resources=insecure_assets,
+        raw_html=seed_html,
+    )
 
     # 4. Performance
     perf_auditor = PerformanceAuditor(
@@ -148,6 +152,11 @@ async def api_run_audit(req: AuditRequest):
             "metrics": {
                 "ssl": audit_res[Category.SECURITY].metrics.get("ssl", {}),
                 "headers": audit_res[Category.SECURITY].metrics.get("headers", {}),
+                "cookies": audit_res[Category.SECURITY].metrics.get("cookies", {}),
+                "email_security": {
+                    "dmarc": audit_res[Category.SECURITY].metrics.get("dmarc"),
+                    "spf": audit_res[Category.SECURITY].metrics.get("spf"),
+                },
                 "performance": audit_res[Category.PERFORMANCE].metrics,
                 "social": audit_res[Category.OFFPAGE].metrics.get("social_profiles", {}),
                 "links": audit_res[Category.OFFPAGE].metrics.get("link_profile", {}),
@@ -165,6 +174,8 @@ async def api_run_audit(req: AuditRequest):
                     "severity": i.severity.value,
                     "evidence": i.evidence,
                     "description": i.description,
+                    "bad_sign": i.bad_sign or i.title,
+                    "why_bad": i.why_bad or i.description,
                     "url": i.url,
                     "solution_nginx": i.solution_nginx,
                     "solution_apache": i.solution_apache,
@@ -456,6 +467,16 @@ async def serve_dashboard():
                             <h3 class="text-base font-bold text-white mb-3">SSL / TLS Certificate Telemetry</h3>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="sslMetricsGrid"></div>
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <h3 class="text-base font-bold text-white mb-3">Email Spoofing Defense (DNS)</h3>
+                                <div class="bg-slate-950 rounded-xl border border-slate-800 p-4 space-y-3" id="emailSecGrid"></div>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-white mb-3">Cookie Security Telemetry</h3>
+                                <div class="bg-slate-950 rounded-xl border border-slate-800 p-4 space-y-3" id="cookieSecGrid"></div>
+                            </div>
+                        </div>
                         <div>
                             <h3 class="text-base font-bold text-white mb-3">HTTP Security Headers Matrix</h3>
                             <div class="overflow-x-auto custom-scrollbar bg-slate-950 rounded-xl border border-slate-800 p-4">
@@ -616,7 +637,27 @@ async def serve_dashboard():
                     }
 
                     const card = document.createElement('div');
-                    card.className = 'border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-2';
+                    card.className = 'border border-slate-800 bg-slate-950/60 rounded-xl p-4 space-y-3';
+
+                    const badSignBox = `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div class="p-2.5 rounded-lg bg-rose-950/40 border border-rose-900/50">
+                                <div class="flex items-center space-x-1.5 text-rose-400 font-bold text-xs mb-1">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <span>Bad Sign (Khatre Ka Sanket):</span>
+                                </div>
+                                <p class="text-xs text-rose-200/90 leading-relaxed">${escapeHtml(issue.bad_sign || issue.title)}</p>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-amber-950/40 border border-amber-900/50">
+                                <div class="flex items-center space-x-1.5 text-amber-400 font-bold text-xs mb-1">
+                                    <i class="fa-solid fa-shield-halved"></i>
+                                    <span>Why It's Bad (Kyu Khatarnak Hai):</span>
+                                </div>
+                                <p class="text-xs text-amber-200/90 leading-relaxed">${escapeHtml(issue.why_bad || issue.description)}</p>
+                            </div>
+                        </div>
+                    `;
+
                     card.innerHTML = `
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="flex items-center space-x-2">
@@ -625,6 +666,7 @@ async def serve_dashboard():
                             </div>
                             <span class="text-xs text-slate-500">${escapeHtml(issue.category)}</span>
                         </div>
+                        ${badSignBox}
                         <p class="text-xs text-slate-300"><strong>Evidence:</strong> <code class="bg-slate-900 px-1 py-0.5 rounded text-slate-200">${escapeHtml(issue.evidence)}</code></p>
                         <p class="text-xs text-slate-400">${escapeHtml(issue.description)}</p>
                         ${codeSection}
@@ -666,6 +708,51 @@ async def serve_dashboard():
                     <span class="text-lg font-bold text-cyan-400">${escapeHtml(ssl.protocol || 'N/A')}</span>
                 </div>
             `;
+
+            // Email Spoofing Defense
+            const emailGrid = document.getElementById('emailSecGrid');
+            if (emailGrid) {
+                const em = data.metrics.email_security || {};
+                const dmarcStatus = em.dmarc ? (em.dmarc.toLowerCase().includes('p=none') ? '<span class="text-amber-400 font-bold">Weak (p=none)</span>' : '<span class="text-emerald-400 font-bold">Active Enforcement</span>') : '<span class="text-rose-400 font-bold">Missing</span>';
+                const spfStatus = em.spf ? (em.spf.toLowerCase().includes('+all') ? '<span class="text-rose-400 font-bold">Permissive (+all)</span>' : '<span class="text-emerald-400 font-bold">Configured</span>') : '<span class="text-rose-400 font-bold">Missing</span>';
+                emailGrid.innerHTML = `
+                    <div class="flex justify-between items-center text-xs pb-1 border-b border-slate-800">
+                        <span class="text-slate-400">DMARC Record:</span>
+                        ${dmarcStatus}
+                    </div>
+                    <p class="text-xs text-slate-300 font-mono bg-slate-900/80 p-2 rounded truncate" title="${escapeHtml(em.dmarc || 'No DMARC TXT record')}">${escapeHtml(em.dmarc || 'No _dmarc TXT record found')}</p>
+                    <div class="flex justify-between items-center text-xs pt-2 pb-1 border-b border-slate-800">
+                        <span class="text-slate-400">SPF Record:</span>
+                        ${spfStatus}
+                    </div>
+                    <p class="text-xs text-slate-300 font-mono bg-slate-900/80 p-2 rounded truncate" title="${escapeHtml(em.spf || 'No SPF TXT record')}">${escapeHtml(em.spf || 'No v=spf1 TXT record found')}</p>
+                `;
+            }
+
+            // Cookie Security Telemetry
+            const cookieGrid = document.getElementById('cookieSecGrid');
+            if (cookieGrid) {
+                const ck = data.metrics.cookies || {};
+                const total = ck.total_cookies || 0;
+                cookieGrid.innerHTML = `
+                    <div class="flex justify-between items-center text-xs pb-1 border-b border-slate-800">
+                        <span class="text-slate-400">Cookies Analyzed:</span>
+                        <span class="text-white font-bold">${total}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs py-1">
+                        <span class="text-slate-400">Missing 'Secure' Flag:</span>
+                        <span class="font-bold ${ck.insecure_count > 0 ? 'text-rose-400' : 'text-emerald-400'}">${ck.insecure_count || 0}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs py-1">
+                        <span class="text-slate-400">Missing 'HttpOnly' (XSS Risk):</span>
+                        <span class="font-bold ${ck.no_httponly_count > 0 ? 'text-rose-400' : 'text-emerald-400'}">${ck.no_httponly_count || 0}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs py-1">
+                        <span class="text-slate-400">Missing / Weak 'SameSite' (CSRF Risk):</span>
+                        <span class="font-bold ${ck.weak_samesite_count > 0 ? 'text-amber-400' : 'text-emerald-400'}">${ck.weak_samesite_count || 0}</span>
+                    </div>
+                `;
+            }
 
             const headersMatrix = document.getElementById('headersMatrix');
             headersMatrix.innerHTML = '';

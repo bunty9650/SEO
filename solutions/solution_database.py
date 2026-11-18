@@ -26,6 +26,8 @@ class IssueSolution(BaseModel):
     default_severity: Severity
     description: str
     remediation: RemediationCode
+    bad_sign: Optional[str] = None
+    why_bad: Optional[str] = None
 
 
 class SolutionDatabase:
@@ -33,24 +35,40 @@ class SolutionDatabase:
 
     _CATALOG: Dict[str, IssueSolution] = {
         # -------------------------------------------------------------
-        # SECURITY & SSL ISSUES
+        # SECURITY & SSL ISSUES (ADVANCED DIAGNOSTICS)
         # -------------------------------------------------------------
+        "SEC_NO_HTTPS": IssueSolution(
+            issue_id="SEC_NO_HTTPS",
+            title="Website Does Not Enforce HTTPS Encryption",
+            category=Category.SECURITY,
+            default_severity=Severity.CRITICAL,
+            description="The site is served over unencrypted HTTP, leaving all traffic vulnerable to interception, tampering, and session hijacking.",
+            bad_sign="Cleartext HTTP connection without TLS encryption.",
+            why_bad="Attackers on the same network (public Wi-Fi, ISP, or rogue routers) can eavesdrop on every byte transferred, intercept login credentials, and inject malicious scripts or ads into the page.",
+            remediation=RemediationCode(
+                apache="""RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]""",
+                nginx="""return 301 https://$host$request_uri;""",
+                code=None,
+                description="Enforce HTTP to HTTPS 301 permanent redirect globally.",
+                impact=Severity.CRITICAL,
+            ),
+        ),
+
         "SEC_MISSING_HSTS": IssueSolution(
             issue_id="SEC_MISSING_HSTS",
             title="Missing HTTP Strict Transport Security (HSTS) Header",
             category=Category.SECURITY,
             default_severity=Severity.HIGH,
-            description=(
-                "The Strict-Transport-Security header forces browsers to communicate "
-                "with your domain exclusively over HTTPS, preventing SSL-stripping and "
-                "man-in-the-middle (MitM) cookie hijacking."
-            ),
+            description="Forces browsers to communicate exclusively over HTTPS, blocking SSL-stripping attacks.",
+            bad_sign="Missing 'Strict-Transport-Security' response header.",
+            why_bad="Without HSTS, a user's initial unencrypted HTTP connection can be downgraded by a Man-in-the-Middle (MitM) attacker using tools like sslstrip, intercepting traffic before an HTTPS upgrade occurs.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 </IfModule>""",
-                nginx="""# Add inside server { ... } block for SSL port 443
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;""",
+                nginx="""add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;""",
                 code="""// In WordPress functions.php:
 add_action('send_headers', function() {
     header("Strict-Transport-Security: max-age=31536000; includeSubDomains; preload");
@@ -66,10 +84,9 @@ add_action('send_headers', function() {
             title="Suboptimal HSTS Header Configuration",
             category=Category.SECURITY,
             default_severity=Severity.MEDIUM,
-            description=(
-                "The HSTS max-age is set to less than 1 year (31,536,000s) or is missing "
-                "the 'includeSubDomains' or 'preload' directives required for browser HSTS preload list eligibility."
-            ),
+            description="The HSTS max-age is set to less than 1 year or lacks 'includeSubDomains' / 'preload'.",
+            bad_sign="HSTS header duration is too short or leaves subdomains unprotected.",
+            why_bad="Short expiration times reduce the window of protection, and omitting 'includeSubDomains' leaves subdomain APIs and staging environments vulnerable to SSL-stripping.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -86,20 +103,54 @@ add_action('send_headers', function() {
             title="Missing Content-Security-Policy (CSP) Header",
             category=Category.SECURITY,
             default_severity=Severity.HIGH,
-            description=(
-                "Content-Security-Policy (CSP) is an essential defense-in-depth layer that "
-                "mitigates Cross-Site Scripting (XSS), malicious script injections, and data exfiltration."
-            ),
+            description="CSP is an essential defense-in-depth layer that restricts allowable resource origins.",
+            bad_sign="No Content-Security-Policy header defined on the server.",
+            why_bad="If an attacker finds any Cross-Site Scripting (XSS) vulnerability or malicious HTML injection on your site, there is no browser policy to prevent them from executing arbitrary external JavaScript or exfiltrating user cookies and tokens.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
-    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https: data:; connect-src 'self' https:; frame-ancestors 'self';"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https:; style-src 'self' https: 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https: data:; connect-src 'self' https:; frame-ancestors 'self';"
 </IfModule>""",
-                nginx="""add_header Content-Security-Policy "default-src 'self'; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https: data:; connect-src 'self' https:; frame-ancestors 'self';" always;""",
-                code="""<!-- In HTML <head> (fallback if web server headers cannot be modified) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' https:; img-src 'self' data: https:;">""",
-                description="Define an explicit Content-Security-Policy restricting allowed resource origins.",
+                nginx="""add_header Content-Security-Policy "default-src 'self'; script-src 'self' https:; style-src 'self' https: 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https: data:; connect-src 'self' https:; frame-ancestors 'self';" always;""",
+                code="""<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https:; style-src 'self' https:;">""",
+                description="Define an explicit Content-Security-Policy restricting allowed script and frame origins.",
                 impact=Severity.HIGH,
                 learn_more_url="https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+            ),
+        ),
+
+        "SEC_CSP_UNSAFE_DIRECTIVE": IssueSolution(
+            issue_id="SEC_CSP_UNSAFE_DIRECTIVE",
+            title="Content Security Policy Contains Insecure Directives ('unsafe-inline' or 'unsafe-eval')",
+            category=Category.SECURITY,
+            default_severity=Severity.MEDIUM,
+            description="CSP policy includes 'unsafe-inline' or 'unsafe-eval' in script execution directives.",
+            bad_sign="CSP allows execution of inline scripts or eval() string-to-code compilation.",
+            why_bad="The main purpose of CSP is defeating XSS. Permitting 'unsafe-inline' allows attackers to execute injected inline `<script>` tags, and 'unsafe-eval' allows dynamic string execution, severely undermining your site's XSS immunity.",
+            remediation=RemediationCode(
+                apache=None,
+                nginx="""# Replace 'unsafe-inline' with cryptographic script nonces:
+# script-src 'self' 'nonce-$RANDOM_NONCE';""",
+                code="""<!-- Use nonces for necessary inline scripts instead of unsafe-inline -->
+<script nonce="EDNnf03nceIzorTkBnQgxA==">/* Safe inline script */</script>""",
+                description="Refactor inline scripts into external files or protect them using CSP nonces/hashes.",
+                impact=Severity.MEDIUM,
+            ),
+        ),
+
+        "SEC_CSP_WILDCARD": IssueSolution(
+            issue_id="SEC_CSP_WILDCARD",
+            title="Content Security Policy Allows Scripts from Any Origin (Wildcard '*')",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="CSP policy uses wildcard '*' in script-src or default-src.",
+            bad_sign="Permissive '*' wildcard allows scripts to be loaded from any website on the internet.",
+            why_bad="Attackers can host malicious JavaScript payloads on any public cloud bucket (AWS S3, Firebase, GitHub) and execute them on your site without violating the CSP policy.",
+            remediation=RemediationCode(
+                apache=None,
+                nginx="""add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://trusted-cdn.com;" always;""",
+                code=None,
+                description="Remove '*' and replace with an explicit whitelist of trusted script hostnames.",
+                impact=Severity.HIGH,
             ),
         ),
 
@@ -108,10 +159,9 @@ add_action('send_headers', function() {
             title="Missing X-Frame-Options Header (Clickjacking Risk)",
             category=Category.SECURITY,
             default_severity=Severity.HIGH,
-            description=(
-                "Without X-Frame-Options, attackers can embed your website into an invisible <iframe> "
-                "on an external phishing site and trick users into clicking buttons (Clickjacking)."
-            ),
+            description="Prevents other sites from embedding your pages inside hidden iframes.",
+            bad_sign="Page can be framed by arbitrary external websites.",
+            why_bad="Attackers can embed your site in an invisible iframe overlay on an external phishing page. When users click on what looks like a harmless button or game, they unknowingly click sensitive actions on your site (Clickjacking).",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set X-Frame-Options "SAMEORIGIN"
@@ -132,10 +182,9 @@ add_action('send_headers', function() {
             title="Missing X-Content-Type-Options Header (MIME-Sniffing Risk)",
             category=Category.SECURITY,
             default_severity=Severity.MEDIUM,
-            description=(
-                "Prevents browsers from MIME-sniffing a response away from the declared content-type. "
-                "Without this, malicious uploaded text or images can be executed as JavaScript."
-            ),
+            description="Prevents browsers from MIME-sniffing a response away from declared content-type.",
+            bad_sign="X-Content-Type-Options header is absent or not set to 'nosniff'.",
+            why_bad="Browsers may inspect the content of user-uploaded files (like images or text) and execute disguised HTML or JavaScript inside them, enabling Stored XSS attacks through file uploads.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
@@ -152,10 +201,9 @@ add_action('send_headers', function() {
             title="Missing Referrer-Policy Header",
             category=Category.SECURITY,
             default_severity=Severity.LOW,
-            description=(
-                "Controls how much referrer information (including query parameters or internal URLs) "
-                "is leaked in the Referer header when navigating away from your site."
-            ),
+            description="Controls how much referrer information is leaked when navigating away from your site.",
+            bad_sign="No Referrer-Policy specified.",
+            why_bad="Sensitive query parameters (e.g. session tokens, password reset links, email addresses) can leak to external third-party sites in the HTTP Referer header when users click outbound links.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
@@ -172,10 +220,9 @@ add_action('send_headers', function() {
             title="Missing Permissions-Policy Header",
             category=Category.SECURITY,
             default_severity=Severity.LOW,
-            description=(
-                "Allows site operators to explicitly disable risky browser APIs (camera, microphone, "
-                "geolocation, payment) that third-party scripts or embedded iframes might abuse."
-            ),
+            description="Allows site operators to explicitly disable risky browser APIs (camera, mic, geolocation).",
+            bad_sign="Permissions-Policy header is missing.",
+            why_bad="Third-party embedded widgets, iframes, or ad networks could request access to device hardware (microphone, camera, GPS location, payment requests) under your domain's trust context.",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
@@ -187,15 +234,254 @@ add_action('send_headers', function() {
             ),
         ),
 
+        "SEC_COOKIE_INSECURE": IssueSolution(
+            issue_id="SEC_COOKIE_INSECURE",
+            title="Cookie Missing 'Secure' Flag Over HTTPS",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Cookies transmitted without the 'Secure' attribute can be sent over unencrypted HTTP.",
+            bad_sign="Cookie lacks the 'Secure' flag on an HTTPS website.",
+            why_bad="If a user accidentally visits an http:// link or resource on the domain, the browser will send this cookie in cleartext over the network, allowing local Wi-Fi eavesdroppers to intercept session cookies.",
+            remediation=RemediationCode(
+                apache="""# In .htaccess:
+Header always edit Set-Cookie ^(.*)$ "$1; Secure" """,
+                nginx="""# In proxy config:
+proxy_cookie_flags ~ secure;""",
+                code="""// In PHP:
+session_set_cookie_params(['secure' => true]);
+
+// In Express.js:
+res.cookie('token', val, { secure: true });""",
+                description="Ensure all Set-Cookie directives append the 'Secure' attribute.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_COOKIE_NO_HTTPONLY": IssueSolution(
+            issue_id="SEC_COOKIE_NO_HTTPONLY",
+            title="Session / Auth Cookie Missing 'HttpOnly' Flag",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Authentication or session cookie is accessible to client-side JavaScript.",
+            bad_sign="Session cookie missing 'HttpOnly' protection.",
+            why_bad="Any JavaScript running on the page (via XSS or a compromised npm package/analytics script) can read `document.cookie` and immediately steal the user's session token, leading to instant account takeover without password cracking.",
+            remediation=RemediationCode(
+                apache="""# In .htaccess:
+Header always edit Set-Cookie ^(.*)$ "$1; HttpOnly" """,
+                nginx="""# In proxy config:
+proxy_cookie_flags ~ httponly;""",
+                code="""// In PHP:
+session_set_cookie_params(['httponly' => true]);
+
+// In Express.js:
+res.cookie('session_id', val, { httpOnly: true });""",
+                description="Set the HttpOnly flag on all session and authentication cookies.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_COOKIE_WEAK_SAMESITE": IssueSolution(
+            issue_id="SEC_COOKIE_WEAK_SAMESITE",
+            title="Cookie Missing or Weak 'SameSite' Attribute",
+            category=Category.SECURITY,
+            default_severity=Severity.MEDIUM,
+            description="Cookie lacks SameSite=Lax or SameSite=Strict protection.",
+            bad_sign="Cookie lacks an explicit SameSite restriction against cross-site requests.",
+            why_bad="Enables Cross-Site Request Forgery (CSRF). Malicious external websites can trick a user's browser into submitting unauthorized authenticated requests to your site while the user is logged in.",
+            remediation=RemediationCode(
+                apache="""Header always edit Set-Cookie ^(.*)$ "$1; SameSite=Lax" """,
+                nginx="""proxy_cookie_flags ~ samesite=lax;""",
+                code="""// In PHP:
+session_set_cookie_params(['samesite' => 'Lax']);""",
+                description="Configure cookies with SameSite=Lax or SameSite=Strict.",
+                impact=Severity.MEDIUM,
+            ),
+        ),
+
+        "SEC_CORS_WILDCARD": IssueSolution(
+            issue_id="SEC_CORS_WILDCARD",
+            title="Insecure CORS Policy Allows Wildcard Origin (*)",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Access-Control-Allow-Origin header is set to wildcard '*' on potentially sensitive endpoints.",
+            bad_sign="CORS header permits any arbitrary external origin to access responses.",
+            why_bad="Any malicious website visited by your users can send fetch() requests to your domain and read the response body, completely bypassing the browser's Same-Origin Policy (SOP).",
+            remediation=RemediationCode(
+                apache="""# Specify exact allowed origin instead of wildcard:
+Header set Access-Control-Allow-Origin "https://trusted.example.com" """,
+                nginx="""# Restrict CORS to authorized origins:
+add_header Access-Control-Allow-Origin "https://trusted.example.com";""",
+                code=None,
+                description="Replace wildcard '*' with an explicit whitelist of trusted domain origins.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_CORS_NULL_ORIGIN": IssueSolution(
+            issue_id="SEC_CORS_NULL_ORIGIN",
+            title="Insecure CORS Policy Allows 'null' Origin",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Access-Control-Allow-Origin header reflects or permits 'null'.",
+            bad_sign="CORS permits untrusted 'null' origin.",
+            why_bad="Sandboxed iframes and local HTML files generate a 'null' origin. Attackers can embed a sandboxed iframe on a phishing website to exploit this and steal private responses.",
+            remediation=RemediationCode(
+                apache=None,
+                nginx="""# Do NOT allow null origin:
+if ($http_origin ~* "^null$") { return 403; }""",
+                code=None,
+                description="Remove 'null' from accepted CORS origins list.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_MISSING_DMARC": IssueSolution(
+            issue_id="SEC_MISSING_DMARC",
+            title="Missing Domain DMARC Email Authentication Record",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Domain lacks a DMARC DNS record to protect against brand email spoofing.",
+            bad_sign="No TXT record found at `_dmarc.<domain>`.",
+            why_bad="Without DMARC, cybercriminals can easily forge emails pretending to come directly from your domain (e.g. ceo@yourdomain.com, accounts@yourdomain.com) to execute phishing attacks and invoice scams against your customers.",
+            remediation=RemediationCode(
+                code="""# Add this DNS TXT record to your domain's DNS zone:
+# Name: _dmarc.yourdomain.com
+# Type: TXT
+# Value:
+v=DMARC1; p=reject; sp=reject; rua=mailto:dmarc-reports@yourdomain.com; aspf=r; adkim=r;""",
+                description="Publish a strict DMARC TXT record with p=quarantine or p=reject.",
+                impact=Severity.HIGH,
+                learn_more_url="https://dmarc.org/",
+            ),
+        ),
+
+        "SEC_WEAK_DMARC": IssueSolution(
+            issue_id="SEC_WEAK_DMARC",
+            title="Weak DMARC Policy (p=none - Monitoring Only)",
+            category=Category.SECURITY,
+            default_severity=Severity.MEDIUM,
+            description="DMARC record exists but policy is set to 'p=none', which does not block spoofed emails.",
+            bad_sign="DMARC policy set to 'p=none' instead of 'quarantine' or 'reject'.",
+            why_bad="A 'p=none' policy only sends telemetry reports but takes NO protective action. Fraudulent emails sent by attackers will still land directly in recipient inboxes.",
+            remediation=RemediationCode(
+                code="""# Upgrade DMARC TXT record:
+v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com;""",
+                description="Upgrade DMARC policy from p=none to p=quarantine or p=reject.",
+                impact=Severity.MEDIUM,
+            ),
+        ),
+
+        "SEC_MISSING_SPF": IssueSolution(
+            issue_id="SEC_MISSING_SPF",
+            title="Missing SPF (Sender Policy Framework) DNS Record",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Domain has no SPF record specifying authorized outgoing mail servers.",
+            bad_sign="Root domain lacks an SPF TXT record (`v=spf1 ...`).",
+            why_bad="Receiving mail servers cannot determine which servers are authorized to send email for your domain, allowing unauthorized servers to spoof your domain name.",
+            remediation=RemediationCode(
+                code="""# Add DNS TXT record for your root domain:
+# Name: @ (or yourdomain.com)
+# Type: TXT
+# Value (Google Workspace example):
+v=spf1 include:_spf.google.com ~all""",
+                description="Publish an SPF record listing your authorized mail provider servers.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_PERMISSIVE_SPF": IssueSolution(
+            issue_id="SEC_PERMISSIVE_SPF",
+            title="Permissive SPF Record Authorizes Global Senders (+all)",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="SPF record concludes with '+all', authorizing any IP address to send email.",
+            bad_sign="SPF terminates with '+all' (pass all).",
+            why_bad="This completely disables SPF email protection by explicitly telling the world that every server on the internet is authorized to send email on your behalf.",
+            remediation=RemediationCode(
+                code="""# Change '+all' to '~all' (SoftFail) or '-all' (HardFail):
+v=spf1 include:_spf.google.com -all""",
+                description="Replace '+all' with '-all' or '~all' in your SPF record.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_SRI_MISSING": IssueSolution(
+            issue_id="SEC_SRI_MISSING",
+            title="Third-Party Scripts Loaded Without Subresource Integrity (SRI)",
+            category=Category.SECURITY,
+            default_severity=Severity.LOW,
+            description="External scripts loaded from public CDNs lack integrity checksum hashes.",
+            bad_sign="<script src='https://cdn...'> tag has no 'integrity' cryptographic hash.",
+            why_bad="If the external CDN or DNS provider is compromised (supply chain attack), attackers can modify the hosted script to inject card skimmers (Magecart) or malware into your visitors' browsers.",
+            remediation=RemediationCode(
+                code="""<!-- Add integrity sha384/sha512 hash and crossorigin attribute -->
+<script src="https://cdn.example.com/lib.min.js" 
+        integrity="sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC" 
+        crossorigin="anonymous"></script>""",
+                description="Add Subresource Integrity (SRI) hashes to all external script tags.",
+                impact=Severity.LOW,
+                learn_more_url="https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity",
+            ),
+        ),
+
+        "SEC_INSECURE_PASSWORD_FORM": IssueSolution(
+            issue_id="SEC_INSECURE_PASSWORD_FORM",
+            title="Password or Authentication Form Submitted Insecurely",
+            category=Category.SECURITY,
+            default_severity=Severity.CRITICAL,
+            description="Form containing a password input field submits to an unencrypted destination.",
+            bad_sign="`<input type='password'>` form target starts with http:// instead of https://.",
+            why_bad="User passwords and usernames are transmitted across the network in plaintext. Any attacker on the local network or Wi-Fi can capture credentials using packet sniffers.",
+            remediation=RemediationCode(
+                code="""<!-- Ensure form action explicitly targets HTTPS -->
+<form action="https://yourdomain.com/login" method="POST">""",
+                description="Ensure all login and authentication forms submit exclusively to https:// endpoints.",
+                impact=Severity.CRITICAL,
+            ),
+        ),
+
+        "SEC_EXPOSED_SECRET": IssueSolution(
+            issue_id="SEC_EXPOSED_SECRET",
+            title="High-Risk Secret or API Key Hardcoded in Public HTML/Scripts",
+            category=Category.SECURITY,
+            default_severity=Severity.HIGH,
+            description="Hardcoded cloud credentials, private keys, or API tokens detected in frontend source code.",
+            bad_sign="High-entropy private key, AWS token, or sensitive API key found in public HTML/JS.",
+            why_bad="Anyone viewing page source or automated web scraping bots can harvest these credentials and gain unauthorized access to backend databases, cloud infrastructure, or third-party APIs.",
+            remediation=RemediationCode(
+                code="""// Move secrets to backend server environment variables:
+const API_KEY = process.env.API_SECRET_KEY; // Never expose on client!""",
+                description="Immediately revoke the exposed secret and move all private keys to backend environment variables.",
+                impact=Severity.HIGH,
+            ),
+        ),
+
+        "SEC_ROBOTS_TXT_LEAK": IssueSolution(
+            issue_id="SEC_ROBOTS_TXT_LEAK",
+            title="Robots.txt Discloses Sensitive Internal Paths",
+            category=Category.SECURITY,
+            default_severity=Severity.LOW,
+            description="robots.txt disallows private admin, staging, or backup directory paths.",
+            bad_sign="Public robots.txt file lists private administrative or secret directories.",
+            why_bad="robots.txt is public and readable by anyone. Attackers actively check robots.txt to discover hidden administration panels, staging servers, and backup repositories.",
+            remediation=RemediationCode(
+                code="""# In robots.txt, avoid listing secret paths. Protect them with authentication instead:
+User-agent: *
+Allow: /""",
+                description="Remove confidential admin paths from robots.txt; protect them with authentication and firewalls.",
+                impact=Severity.LOW,
+            ),
+        ),
+
         "SEC_SERVER_HEADER_EXPOSED": IssueSolution(
             issue_id="SEC_SERVER_HEADER_EXPOSED",
             title="Server Banner & Version Information Leaked",
             category=Category.SECURITY,
             default_severity=Severity.LOW,
-            description=(
-                "The web server exposes its exact software name and version in the 'Server' header, "
-                "aiding automated fingerprinting by vulnerability scanners."
-            ),
+            description="The web server exposes its exact software name and version in the 'Server' header.",
+            bad_sign="'Server' header reveals exact web server software and version number.",
+            why_bad="Attackers use exact version banners (e.g. Apache/2.4.41 or nginx/1.18.0) to quickly search CVE vulnerability databases and target unpatched security bugs specifically for that version.",
             remediation=RemediationCode(
                 apache="""# In httpd.conf or apache2.conf:
 ServerTokens Prod
@@ -213,16 +499,14 @@ server_tokens off;""",
             title="Application Technology Leaked via X-Powered-By",
             category=Category.SECURITY,
             default_severity=Severity.MEDIUM,
-            description=(
-                "The response leaks underlying backend tech (PHP, Express, ASP.NET) in the "
-                "X-Powered-By header, allowing attackers to target framework-specific CVEs."
-            ),
+            description="The response leaks underlying backend tech (PHP, Express, ASP.NET) in X-Powered-By.",
+            bad_sign="Backend framework fingerprint exposed in HTTP response header.",
+            why_bad="Provides attackers with immediate architectural knowledge, allowing them to target framework-specific exploit payloads (e.g., PHP deserialization, Express prototype pollution).",
             remediation=RemediationCode(
                 apache="""<IfModule mod_headers.c>
     Header unset X-Powered-By
 </IfModule>""",
-                nginx="""# In nginx.conf or proxy config:
-proxy_hide_header X-Powered-By;
+                nginx="""proxy_hide_header X-Powered-By;
 fastcgi_hide_header X-Powered-By;""",
                 code="""// In php.ini:
 expose_php = Off
@@ -239,19 +523,15 @@ app.disable('x-powered-by');""",
             title="Mixed Content Detected (Insecure HTTP Assets on HTTPS)",
             category=Category.SECURITY,
             default_severity=Severity.CRITICAL,
-            description=(
-                "Your HTTPS page loads active or passive resources (scripts, stylesheets, images) "
-                "over insecure HTTP. Browsers will block scripts or show 'Not Secure' warnings."
-            ),
+            description="Your HTTPS page loads resources (scripts, stylesheets, images) over insecure HTTP.",
+            bad_sign="HTTP asset links loaded inside an encrypted HTTPS origin.",
+            why_bad="Browsers will block mixed scripts or mark the site as 'Not Secure'. Insecure scripts allow attackers to inject code into an otherwise secure HTTPS session.",
             remediation=RemediationCode(
-                apache="""# Enforce HTTPS redirect for all requests
-RewriteEngine On
+                apache="""RewriteEngine On
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]""",
-                nginx="""# Upgrade all insecure requests via CSP
-add_header Content-Security-Policy "upgrade-insecure-requests;" always;""",
-                code="""<!-- Add to HTML <head> to auto-upgrade requests -->
-<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">""",
+                nginx="""add_header Content-Security-Policy "upgrade-insecure-requests;" always;""",
+                code="""<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">""",
                 description="Update all internal asset URLs to https:// and enforce upgrade-insecure-requests.",
                 impact=Severity.CRITICAL,
             ),
@@ -262,10 +542,9 @@ add_header Content-Security-Policy "upgrade-insecure-requests;" always;""",
             title="Critical Sensitive File Publicly Accessible",
             category=Category.SECURITY,
             default_severity=Severity.CRITICAL,
-            description=(
-                "A sensitive configuration, environment (.env), or repository (.git) file is publicly "
-                "accessible without authentication, risking immediate database and API credential exposure."
-            ),
+            description="A sensitive configuration, environment (.env), or repository (.git) file is publicly accessible.",
+            bad_sign="Sensitive configuration, source code repo, or backup file returns HTTP 200 OK.",
+            why_bad="Direct exposure of database passwords, API secrets, JWT secret keys, and application source code, leading to total server compromise.",
             remediation=RemediationCode(
                 apache=r"""# In .htaccess:
 <FilesMatch "^(\.env|\.git|\.docker|.*\.sql|.*\.bak|composer\.(json|lock)|package\.json)">
@@ -289,20 +568,16 @@ location ~* \.(sql|bak|old|orig|tar|gz|zip)$ {
 
         "SEC_SSL_EXPIRED": IssueSolution(
             issue_id="SEC_SSL_EXPIRED",
-            title="SSL/TLS Certificate is Expired",
+            title="SSL/TLS Certificate is Expired or Untrusted",
             category=Category.SECURITY,
             default_severity=Severity.CRITICAL,
-            description=(
-                "The SSL certificate has expired. Browsers will completely block visitors "
-                "with interstitial security warnings (NET::ERR_CERT_DATE_INVALID)."
-            ),
+            description="The SSL certificate has expired or cannot be verified by a trusted root authority.",
+            bad_sign="Expired or untrusted TLS certificate.",
+            why_bad="Browsers will display an alarming full-page interstitial warning (NET::ERR_CERT_DATE_INVALID), blocking 99%+ of visitors and destroying trust.",
             remediation=RemediationCode(
-                apache="""# Renew certificate using Certbot:
-certbot renew --apache""",
-                nginx="""# Renew certificate using Certbot:
-certbot renew --nginx""",
-                code="""# Force renewal via certbot:
-certbot certonly --standalone -d yourdomain.com""",
+                apache="""certbot renew --apache""",
+                nginx="""certbot renew --nginx""",
+                code="""certbot certonly --standalone -d yourdomain.com""",
                 description="Renew your SSL certificate immediately through your CA or Let's Encrypt Certbot.",
                 impact=Severity.CRITICAL,
             ),
@@ -313,15 +588,14 @@ certbot certonly --standalone -d yourdomain.com""",
             title="SSL/TLS Certificate Expiring Soon (< 30 Days)",
             category=Category.SECURITY,
             default_severity=Severity.HIGH,
-            description=(
-                "The SSL certificate will expire in less than 30 days. Automated renewal should be verified "
-                "to prevent unexpected site outages."
-            ),
+            description="The SSL certificate will expire in less than 30 days.",
+            bad_sign="Certificate valid lifetime is running out.",
+            why_bad="If automated renewal fails or is not monitored, the site will suffer an unexpected outage the moment the certificate expires.",
             remediation=RemediationCode(
                 apache="""certbot renew --dry-run""",
                 nginx="""certbot renew --dry-run""",
                 code=None,
-                description="Test and execute automatic certificate renewal before expiration.",
+                description="Verify and execute certificate renewal before expiration date.",
                 impact=Severity.HIGH,
             ),
         ),
@@ -331,17 +605,16 @@ certbot certonly --standalone -d yourdomain.com""",
             title="Obsolete TLS Protocol Version Allowed",
             category=Category.SECURITY,
             default_severity=Severity.HIGH,
-            description=(
-                "The server supports legacy TLS 1.0 or TLS 1.1, which contain known cryptographic flaws "
-                "(POODLE, BEAST) and violate PCI-DSS compliance."
-            ),
+            description="The server supports deprecated TLS 1.0 or TLS 1.1 protocols.",
+            bad_sign="Deprecated TLS 1.0 or 1.1 protocol supported by web server.",
+            why_bad="Legacy TLS versions have well-known cryptographic weaknesses (POODLE, BEAST attacks), violate PCI-DSS compliance, and are blocked by modern browsers.",
             remediation=RemediationCode(
                 apache="""# In ssl.conf:
 SSLProtocol -all +TLSv1.2 +TLSv1.3""",
                 nginx="""# In nginx.conf:
 ssl_protocols TLSv1.2 TLSv1.3;""",
                 code=None,
-                description="Disable TLS 1.0 and 1.1; enable only TLS 1.2 and TLS 1.3.",
+                description="Disable TLS 1.0 and 1.1; enable exclusively TLS 1.2 and TLS 1.3.",
                 impact=Severity.HIGH,
             ),
         ),
@@ -884,8 +1157,10 @@ add_header Cache-Control "public, no-transform";""",
         url: Optional[str] = None,
         custom_severity: Optional[Severity] = None,
         custom_title: Optional[str] = None,
+        custom_bad_sign: Optional[str] = None,
+        custom_why_bad: Optional[str] = None,
     ) -> AuditIssue:
-        """Helper to create an AuditIssue populated with standard solutions."""
+        """Helper to create an AuditIssue populated with standard solutions and bad sign explanations."""
         solution = cls.get(issue_id)
         if not solution:
             # Fallback for dynamic or novel issues
@@ -897,6 +1172,8 @@ add_header Cache-Control "public, no-transform";""",
                 description=f"Issue detected: {issue_id}",
                 evidence=evidence,
                 url=url,
+                bad_sign=custom_bad_sign or f"Anomaly detected in {issue_id}",
+                why_bad=custom_why_bad or f"Potential misconfiguration in {issue_id}",
             )
 
         severity = custom_severity or solution.default_severity
@@ -911,6 +1188,8 @@ add_header Cache-Control "public, no-transform";""",
             description=solution.description,
             evidence=evidence,
             url=url,
+            bad_sign=custom_bad_sign or solution.bad_sign,
+            why_bad=custom_why_bad or solution.why_bad,
             solution_apache=rem.apache,
             solution_nginx=rem.nginx,
             solution_code=rem.code,
